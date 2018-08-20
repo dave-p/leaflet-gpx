@@ -124,14 +124,6 @@ L.GPX = L.FeatureGroup.extend({
     if (mins < 10) s += '0';
     s += mins + '\'';
 
-    var secs = Math.floor(duration / _SECOND_IN_MILLIS);
-    duration = duration % _SECOND_IN_MILLIS;
-    if (secs < 10) s += '0';
-    s += secs;
-
-    if (!hidems && duration > 0) s += '.' + Math.round(Math.floor(duration)*1000)/1000;
-    else s += '"';
-
     return s;
   },
 
