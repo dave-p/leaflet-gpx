@@ -631,17 +631,10 @@ L.GPX = L.FeatureGroup.extend({
   },
 
   _dist2d: function(a, b) {
-    var R = 6371000;
-    var dLat = this._deg2rad(b.lat - a.lat);
-    var dLon = this._deg2rad(b.lng - a.lng);
-    var r = Math.sin(dLat/2) *
-      Math.sin(dLat/2) +
-      Math.cos(this._deg2rad(a.lat)) *
-      Math.cos(this._deg2rad(b.lat)) *
-      Math.sin(dLon/2) *
-      Math.sin(dLon/2);
-    var c = 2 * Math.atan2(Math.sqrt(r), Math.sqrt(1-r));
-    var d = R * c;
+    var R = 111200;
+    var dLat = b.lat - a.lat;
+    var dLon = (b.lng - a.lng) * Math.cos(this._deg2rad(a.lat));
+    var d = R * Math.sqrt(dLat*dLat + dLon*dLon);
     return d;
   },
 
