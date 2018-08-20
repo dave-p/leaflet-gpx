@@ -68,17 +68,17 @@ var _DEFAULT_GPX_OPTS = {
   parseElements: ['track', 'route', 'waypoint'],
   show_kilometer_point: false,
   kilometer_point_options : {
-    kilometer_point_color: 'blue',
-    kilometer_point_color_text: 'white',
-    kilometer_point_interval: 1,
-    kilometer_point_radius: 12,
+    color: 'white',
+    text_color: 'black',
+    interval: 1,
+    diameter: 12,
   },
   show_mile_point: true,
   mile_point_options : {
-    mile_point_color: 'blue',
-    mile_point_color_text: 'white',
-    mile_interval: 1,
-    mile_point_radius: 12,
+    color: 'white',
+    text_color: 'black',
+    interval: 1,
+    diameter: 12,
   },
 };
 L.GPX = L.FeatureGroup.extend({
@@ -424,18 +424,18 @@ L.GPX = L.FeatureGroup.extend({
           if (this._parse_current_kilometer != null) {
             // Kilometer Point
             if (options.gpx_options.show_kilometer_point) {
-              if ((parseInt(this._info.length/1000) - this._parse_current_kilometer) > options.gpx_options.kilometer_point_options.kilometer_point_interval-1) {
+              if ((parseInt(this._info.length/1000) - this._parse_current_kilometer) > options.gpx_options.kilometer_point_options.interval-1) {
                 this._parse_current_kilometer = parseInt(this._info.length/1000);
-                var icon = L.divIcon({ className: 'kilometer_tooltip', html: this._parse_current_kilometer.toString(), iconSize: options.gpx_options.mile_point_options.kilometer_point_radius });
+                var icon = L.divIcon({ className: 'kilometer_tooltip', html: this._parse_current_kilometer.toString(), iconSize: options.gpx_options.mile_point_options.diameter });
                 var marker = L.marker(ll, { icon: icon });
                 kilometer_point_layers.push(marker);
               }
             }
             // Mile Point
             if (options.gpx_options.show_mile_point) {
-              if ((parseInt(this.to_miles(this._info.length)/1000) - this._parse_current_mile) > options.gpx_options.mile_point_options.mile_interval-1) {
+              if ((parseInt(this.to_miles(this._info.length)/1000) - this._parse_current_mile) > options.gpx_options.mile_point_options.interval-1) {
                 this._parse_current_mile = parseInt(this.to_miles(this._info.length)/1000);
-                var icon = L.divIcon({ className: 'mile_tooltip', html: this._parse_current_mile.toString(), iconSize: options.gpx_options.mile_point_options.mile_point_radius });
+                var icon = L.divIcon({ className: 'mile_tooltip', html: this._parse_current_mile.toString(), iconSize: options.gpx_options.mile_point_options.diameter });
                 var marker = L.marker(ll, { icon: icon });
                 mile_point_layers.push(marker);
               }
@@ -457,13 +457,13 @@ L.GPX = L.FeatureGroup.extend({
             styles += '}';
             sheet.insertRule(styles, 0);
             var styles_kilometer = '.kilometer_tooltip {';
-            styles_kilometer += 'color: ' + options.gpx_options.kilometer_point_options.kilometer_point_color_text + ';';
-            styles_kilometer += 'background: ' + options.gpx_options.kilometer_point_options.kilometer_point_color + ';';
+            styles_kilometer += 'color: ' + options.gpx_options.kilometer_point_options.text_color + ';';
+            styles_kilometer += 'background: ' + options.gpx_options.kilometer_point_options.color + ';';
             styles_kilometer += '}';
             sheet.insertRule(styles_kilometer, 0);
             var styles_mile = '.mile_tooltip {';
-            styles_mile += 'color: ' + options.gpx_options.mile_point_options.mile_point_color_text + ';';
-            styles_mile += 'background: ' + options.gpx_options.mile_point_options.mile_point_color + ';';
+            styles_mile += 'color: ' + options.gpx_options.mile_point_options.text_color + ';';
+            styles_mile += 'background: ' + options.gpx_options.mile_point_options.color + ';';
             styles_mile += '}';
             sheet.insertRule(styles_mile, 0);
           }
