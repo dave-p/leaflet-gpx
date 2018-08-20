@@ -408,7 +408,14 @@ L.GPX = L.FeatureGroup.extend({
       this._info.duration.end = ll.meta.time;
 
       if (last != null) {
-        this._info.length += this._dist3d(last, ll);
+         var d = this._dist2d(last, ll);
+         t = Math.abs(ll.meta.time - last.meta.time);
+         this._info.duration.total += t;
+         var s = d / t;
+         if (s > 0.0002) {  // 0.44mph or 0.2m/s
+           this._info.duration.moving += t;
+           this._info.length += d;
+         }
 
         /*
          * Add points to the line.
@@ -462,18 +469,13 @@ L.GPX = L.FeatureGroup.extend({
           }
         }
 
-        var t = ll.meta.ele - last.meta.ele;
+        t = ll.meta.ele - last.meta.ele;
         if (t > 0) {
           this._info.elevation.gain += t;
         } else {
           this._info.elevation.loss += Math.abs(t);
         }
 
-        t = Math.abs(ll.meta.time - last.meta.time);
-        this._info.duration.total += t;
-        if (t < options.max_point_interval) {
-          this._info.duration.moving += t;
-        }
       } else if (this._info.duration.start == null) {
         this._info.duration.start = ll.meta.time;
       }
