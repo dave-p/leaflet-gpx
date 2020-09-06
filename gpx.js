@@ -44,13 +44,21 @@ var _MINUTE_IN_MILLIS = 60 * _SECOND_IN_MILLIS;
 var _HOUR_IN_MILLIS = 60 * _MINUTE_IN_MILLIS;
 var _DAY_IN_MILLIS = 24 * _HOUR_IN_MILLIS;
 
+var _GPX_STYLE_NS = 'http://www.topografix.com/GPX/gpx_style/0/2';
+
 var _DEFAULT_MARKER_OPTS = {
   startIconUrl: 'pin-icon-start.png',
   endIconUrl: 'pin-icon-end.png',
   shadowUrl: 'pin-shadow.png',
+  wptIcons: [],
+  wptIconsType: [],
   wptIconUrls : {
     '': 'pin-icon-wpt.png',
   },
+  wptIconTypeUrls : {
+    '': 'pin-icon-wpt.png',
+  },
+  pointMatchers: [],
   iconSize: [33, 50],
   shadowSize: [50, 50],
   iconAnchor: [16, 45],
@@ -76,16 +84,16 @@ var _DEFAULT_GPX_OPTS = {
     mile_intervall: 1,
     mile_point_radius: 10,
   },
+  joinTrackSegments: true
 };
+
 L.GPX = L.FeatureGroup.extend({
   initialize: function(gpx, options) {
     options.max_point_interval = options.max_point_interval || _MAX_POINT_INTERVAL_MS;
     options.marker_options = this._merge_objs(
       _DEFAULT_MARKER_OPTS,
       options.marker_options || {});
-    options.polyline_options = this._merge_objs(
-      _DEFAULT_POLYLINE_OPTS,
-      options.polyline_options || {});
+    options.polyline_options = options.polyline_options || {};
     options.gpx_options = this._merge_objs(
       _DEFAULT_GPX_OPTS,
       options.gpx_options || {});
@@ -286,9 +294,12 @@ L.GPX = L.FeatureGroup.extend({
     var _this = this;
     var cb = function(gpx, options) {
       var layers = _this._parse_gpx_data(gpx, options);
-      if (!layers) return;
+      if (!layers) {
+        _this.fire('error', { err: 'No parseable layers of type(s) ' + JSON.stringify(options.gpx_options.parseElements) });
+        return;
+      }
       _this.addLayer(layers);
-      _this.fire('loaded');
+      _this.fire('loaded', { layers: layers, element: gpx });
     }
     if (input.substr(0,1)==='<') { // direct XML has to start with a <
       var parser = new DOMParser();
@@ -305,16 +316,7 @@ L.GPX = L.FeatureGroup.extend({
   },
 
   _parse_gpx_data: function(xml, options) {
-    var j, i, el, layers = [];
-    var tags = [];
-
-    var parseElements = options.gpx_options.parseElements;
-    if (parseElements.indexOf('route') > -1) {
-      tags.push(['rte','rtept']);
-    }
-    if (parseElements.indexOf('track') > -1) {
-      tags.push(['trkseg','trkpt']);
-    }
+    var i, t, l, el, layers = [];
 
     var name = xml.getElementsByTagName('name');
     if (name.length > 0) {
@@ -333,35 +335,29 @@ L.GPX = L.FeatureGroup.extend({
       this._info.copyright = copyright[0].textContent;
     }
 
-    for (j = 0; j < tags.length; j++) {
-      el = xml.getElementsByTagName(tags[j][0]);
-      for (i = 0; i < el.length; i++) {
-        var coords = this._parse_trkseg(el[i], xml, options, tags[j][1]);
-        if (coords.length === 0) continue;
+    var parseElements = options.gpx_options.parseElements;
+    if (parseElements.indexOf('route') > -1) {
+      // routes are <rtept> tags inside <rte> sections
+      var routes = xml.getElementsByTagName('rte');
+      for (i = 0; i < routes.length; i++) {
+        layers = layers.concat(this._parse_segment(routes[i], options, {}, 'rtept'));
+      }
+    }
 
-        // add track
-        var l = new L.Polyline(coords, options.polyline_options);
-        this.fire('addline', { line: l })
-        layers.push(l);
+    if (parseElements.indexOf('track') > -1) {
+      // tracks are <trkpt> tags in one or more <trkseg> sections in each <trk>
+      var tracks = xml.getElementsByTagName('trk');
+      for (i = 0; i < tracks.length; i++) {
+        var track = tracks[i];
+        var polyline_options = this._extract_styling(track);
 
-        if (options.marker_options.startIcon || options.marker_options.startIconUrl) {
-          // add start pin
-          var p = new L.Marker(coords[0], {
-            clickable: options.marker_options.clickable,
-            icon: options.marker_options.startIcon || new L.GPXTrackIcon({iconUrl: options.marker_options.startIconUrl})
-          });
-          this.fire('addpoint', { point: p, point_type: 'start' });
-          layers.push(p);
-        }
-
-        if (options.marker_options.endIcon || options.marker_options.endIconUrl) {
-          // add end pin
-          p = new L.Marker(coords[coords.length-1], {
-            clickable: options.marker_options.clickable,
-            icon: options.marker_options.endIcon || new L.GPXTrackIcon({iconUrl: options.marker_options.endIconUrl})
-          });
-          this.fire('addpoint', { point: p, point_type: 'end' });
-          layers.push(p);
+        if (options.gpx_options.joinTrackSegments) {
+          layers = layers.concat(this._parse_segment(track, options, polyline_options, 'trkpt'));
+        } else {
+          var segments = track.getElementsByTagName('trkseg');
+          for (j = 0; j < segments.length; j++) {
+            layers = layers.concat(this._parse_segment(segments[j], options, polyline_options, 'trkpt'));
+          }
         }
       }
     }
@@ -395,7 +391,13 @@ L.GPX = L.FeatureGroup.extend({
         if (symEl.length > 0) {
           symKey = symEl[0].textContent;
         }
-
+		
+        var typeEl = el[i].getElementsByTagName('type');
+        var typeKey = '';
+        if (typeEl.length > 0) {
+          typeKey = typeEl[0].textContent;
+        }
+		
         /*
          * Add waypoint marker based on the waypoint symbol key.
          *
@@ -406,11 +408,17 @@ L.GPX = L.FeatureGroup.extend({
          */
         var wptIcons = options.marker_options.wptIcons;
         var wptIconUrls = options.marker_options.wptIconUrls;
+        var wptIconsType = options.marker_options.wptIconsType;
+        var wptIconTypeUrls = options.marker_options.wptIconTypeUrls;
         var symIcon;
         if (wptIcons && wptIcons[symKey]) {
           symIcon = wptIcons[symKey];
-        } else if (wptIconUrls && wptIconUrls[symKey]) {
+        } else if (wptIconsType && wptIconsType[typeKey]){
+          symIcon = wptIconsType[typeKey];
+        } else if (wptIconUrls && wptIconUrls[symKey]){
           symIcon = new L.GPXTrackIcon({iconUrl: wptIconUrls[symKey]});
+        } else if (wptIconTypeUrls && wptIconTypeUrls[typeKey]){
+          symIcon = new L.GPXTrackIcon({iconUrl: wptIconTypeUrls[typeKey]});	
         } else if (wptIcons && wptIcons['']) {
           symIcon = wptIcons[''];
         } else if (wptIconUrls && wptIconUrls['']) {
@@ -422,12 +430,13 @@ L.GPX = L.FeatureGroup.extend({
         }
 
         var marker = new L.Marker(ll, {
-          clickable: true,
+          clickable: options.marker_options.clickable,
           title: name,
-          icon: symIcon
+          icon: symIcon,
+          type: 'waypoint'
         });
         marker.bindPopup("<b>" + name + "</b>" + (desc.length > 0 ? '<br>' + desc : '')).openPopup();
-        this.fire('addpoint', { point: marker, point_type: 'waypoint' });
+        this.fire('addpoint', { point: marker, point_type: 'waypoint', element: el[i] });
         layers.push(marker);
       }
     }
@@ -439,14 +448,17 @@ L.GPX = L.FeatureGroup.extend({
     }
   },
 
-  _parse_trkseg: function(line, xml, options, tag) {
+  _parse_segment: function(line, options, polyline_options, tag) {
     var el = line.getElementsByTagName(tag);
     var kilometer_point_layers = [];
     var mile_point_layers = [];
     var _this = this;
 
     if (!el.length) return [];
+
     var coords = [];
+    var markers = [];
+    var layers = [];
     var last = null;
 
     for (var i = 0; i < el.length; i++) {
@@ -465,6 +477,19 @@ L.GPX = L.FeatureGroup.extend({
       _ = el[i].getElementsByTagName('ele');
       if (_.length > 0) {
         ll.meta.ele = parseFloat(_[0].textContent);
+      }
+
+      _ = el[i].getElementsByTagName('name');
+      if (_.length > 0) {
+        var name = _[0].textContent;
+        var ptMatchers = options.marker_options.pointMatchers || [];
+
+        for (var j = 0; j < ptMatchers.length; j++) {
+          if (ptMatchers[j].regex.test(name)) {
+            markers.push({ label: name, coords: ll, icon: ptMatchers[j].icon, element: el[i] });
+            break;
+          }
+        }
       }
 
       _ = el[i].getElementsByTagNameNS('*', 'hr');
@@ -599,7 +624,59 @@ L.GPX = L.FeatureGroup.extend({
        _this.addLayer(new L.FeatureGroup(mile_point_layers));
     }
 
-    return coords;
+    // add track
+    var l = new L.Polyline(coords, this._extract_styling(line, polyline_options, options.polyline_options));
+    this.fire('addline', { line: l, element: line });
+    layers.push(l);
+
+    if (options.marker_options.startIcon || options.marker_options.startIconUrl) {
+      // add start pin
+      var marker = new L.Marker(coords[0], {
+        clickable: options.marker_options.clickable,
+        icon: options.marker_options.startIcon || new L.GPXTrackIcon({iconUrl: options.marker_options.startIconUrl})
+      });
+      this.fire('addpoint', { point: marker, point_type: 'start', element: el[0] });
+      layers.push(marker);
+    }
+
+    if (options.marker_options.endIcon || options.marker_options.endIconUrl) {
+      // add end pin
+      var marker = new L.Marker(coords[coords.length-1], {
+        clickable: options.marker_options.clickable,
+        icon: options.marker_options.endIcon || new L.GPXTrackIcon({iconUrl: options.marker_options.endIconUrl})
+      });
+      this.fire('addpoint', { point: marker, point_type: 'end', element: el[el.length-1] });
+      layers.push(marker);
+    }
+
+    // add named markers
+    for (var i = 0; i < markers.length; i++) {
+      var marker = new L.Marker(markers[i].coords, {
+        clickable: options.marker_options.clickable,
+        title: markers[i].label,
+        icon: markers[i].icon
+      });
+      this.fire('addpoint', { point: marker, point_type: 'label', element: markers[i].element });
+      layers.push(marker);
+    }
+
+    return layers;
+  },
+
+  _extract_styling: function(el, base, overrides) {
+    var style = this._merge_objs(_DEFAULT_POLYLINE_OPTS, base);
+    var e = el.getElementsByTagNameNS(_GPX_STYLE_NS, 'line');
+    if (e.length > 0) {
+      var _ = e[0].getElementsByTagName('color');
+      if (_.length > 0) style.color = '#' + _[0].textContent;
+      var _ = e[0].getElementsByTagName('opacity');
+      if (_.length > 0) style.opacity = _[0].textContent;
+      var _ = e[0].getElementsByTagName('weight');
+      if (_.length > 0) style.weight = _[0].textContent;
+      var _ = e[0].getElementsByTagName('linecap');
+      if (_.length > 0) style.lineCap = _[0].textContent;
+    }
+    return this._merge_objs(style, overrides)
   },
 
   _dist2d: function(a, b) {
